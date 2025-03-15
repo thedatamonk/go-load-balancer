@@ -10,54 +10,46 @@ import (
 	"os"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type LoadBalancer struct {
-	Current			int
-	Mutex			sync.Mutex
-	servers			[]*Server
-	failureCount 	map[string]int
-	removeAfter		int
-	healthCheckInterval time.Duration
-	num_requests			int64
+	Mutex			             sync.Mutex             // Lock used by load balancer while updating one or more of its attributes
+	servers			             []*Server              // list of servers in the server pool
+	failureCount 	             map[string]int         // tracks # of times a server has been found unhealthy continously.
+	removeAfter		             int                    // # of attempts after which an unhealthy server will be removed from the server pool
+	healthCheckInterval          time.Duration          // time interval after which health check needs to be performed by load balancer for each server
+	strategy                     LBStrategy       // Can be one of the load balancing strategies 
+	connections                  map[string]int         // stores the current number of active connections on each server
+
 }
 
-
-// define a method for LoadBalancer struct type
-func (lb *LoadBalancer) allocateServer(servers []*Server) *Server {
-	// this function returns a pointer to one of the servers
-	// this is the round robin technique
+// Load balancer methods
+// This one is used to update the strategy when the user requests it
+func (lb *LoadBalancer) setStrategy(newStrategy LBStrategy) {
 	lb.Mutex.Lock()
 	defer lb.Mutex.Unlock()
 
-	for i := 0; i < len(servers); i++ {
-
-		// TODO: Do we need to make the next line atomic.
-		// This might be required when our load balancer is not just a single machine
-		// but is present on multiple machines.
-		// for now, we will assume that the load balancer resides on a single machine
-		idx := lb.Current % len(servers)
-		nextServer := servers[idx]
-		lb.Current++
-
-		nextServer.Mutex.Lock()
-		IsHealthy := nextServer.IsHealthy
-		nextServer.Mutex.Unlock()
-
-		if IsHealthy {
-			return nextServer
-		}
-	}
-
-	return nil
+	lb.strategy = newStrategy
+	fmt.Printf("Load balancing strategy change to: %T\n", newStrategy)
 }
 
-// this function is called by load balancer when we need to add a server
-// in case of surge in traffic
-// the criterion of when will this function be called can vary
-// but this function doesn't reallly cares about that
+
+// This one is used for finding the next server using the currently selected strategy
+func (lb *LoadBalancer) SelectServer() *Server {
+	lb.Mutex.Lock()
+	defer lb.Mutex.Unlock()
+
+	server, err := lb.strategy.SelectServer(lb)
+
+	if err != nil {
+		log.Fatalf("Error: %s", err.Error())
+	}
+
+	return server
+}
+
+// This one is called by user manually when new server needs to be added in the server pool
 func (lb *LoadBalancer) addServer(server_addr string) {
 	lb.Mutex.Lock()
 	defer lb.Mutex.Unlock()
@@ -74,15 +66,14 @@ func (lb *LoadBalancer) removeServer(server_addr string) {
 	lb.Mutex.Lock()
 	defer lb.Mutex.Unlock()
 
-	// iterate over all the servers that the load balancer has visibility over
-	// to find the server at server_addr
 	// TODO: Once we remove a server, we also need to ensure that the health check
 	// should not happen for that server
 	// I think currently it's happening
 	for i, server := range lb.servers {
 		if server.URL.String() == server_addr {
-			lb.servers = append(lb.servers[:i], lb.servers[i+1:]...)
-			delete(lb.failureCount, server_addr)		// delete entry from failure count mapping
+			lb.servers = append(lb.servers[:i], lb.servers[i+1:]...)         // remove the server from the server pool
+			delete(lb.failureCount, server_addr)		                     // delete server entry from the `server-># of failures` mapping
+			delete(lb.connections, server_addr)                              // delete server entry from the `server-># of connections` mapping
 			log.Printf("Removed server @ %s", server_addr)
 			return
 		}
@@ -90,27 +81,13 @@ func (lb *LoadBalancer) removeServer(server_addr string) {
 }
 
 
-func (lb *LoadBalancer) monitorTraffic() {
-
-	// TODO: this function needs to be implemented properly
-	// i think we will have to use zookeeper for this
-	// monitors traffic every 10 seconds, and add/remove servers depending upon RPS (requests per second)
-	for range time.Tick(time.Second * 10) {
-		num_requests := atomic.LoadInt64(&lb.num_requests)
-		atomic.StoreInt64(&lb.num_requests,  0)
-
-		if num_requests > 100 {
-			lb.addServer("http://localhost:9100")		// TODO: What server to add?
-		}
-
-		// Note: We wont be removing any servers because removal of servers
-		// is handled by healthCheck()
-	}
-}
-
 func (lb *LoadBalancer) healthCheck() {
 	for range time.Tick(lb.healthCheckInterval) {
 		for _, server := range lb.servers {
+
+			// send each server a Head request
+			// this helps us get the health status of the server
+			// without downloading the response of the request
 			res, err := http.Head(server.URL.String())
 			server.Mutex.Lock()
 			if err != nil || res.StatusCode != http.StatusOK {
@@ -194,14 +171,12 @@ type ResponseRecorder struct {
 	statusCode int
 }
 
-func (r *ResponseRecorder) WriteHeader(code int) {
-	r.statusCode = code
-	// r.ResponseWriter.WriteHeader(code)
-}
+// func (r *ResponseRecorder) WriteHeader(code int) {
+// 	r.statusCode = code
+// 	// r.ResponseWriter.WriteHeader(code)
+// }
 
 func main() {
-
-	// loading algos
 
 	// load server config
 	config, err := loadConfig("config.json")
@@ -226,36 +201,39 @@ func main() {
 		servers = append(servers, server)
 	}
 
-	// instantiate load balancer and initiate health check module between load balancer and each backend server
-	// current indicates the index of the currently active server
+	// Load the load balancer strategy
+	strategy, err := NewStrategy(config.LbAlgo)
+	if err != nil {
+		log.Fatalf("Error: %s", err.Error());
+	}
+
+	// Instantiate the load balancer
 	lb := LoadBalancer{
-						Current: 0,
 						servers: servers,
 						failureCount: make(map[string]int),
 						removeAfter: 30,
 						healthCheckInterval: healthCheckInterval,
+						strategy: strategy,
+						connections: make(map[string]int),
 					}
 
-	// will have to run the health cheeck in a separate thread
+					
+	// Initiate health checks by load balancer in a separate go routine
 	go lb.healthCheck()
 
-	// monitor traffic and accordingly add servers from pool
-	// go lb.monitorTraffic()
-	
 	maxRetries := config.MaxRetries
 
 	// handler function to handle request to the load balancer
-	// insides this handler function, we will call the allocateServer method that will return the server that needs to server this request
+	// insides this handler function, we will call the allocateServer method that will return the server that needs to serve this request
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
 		
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
+
 			// find the next server using the specified load balancing strategy
 			// for now we are implementing round-robin strategy
-			server := lb.allocateServer(servers)
+			server := lb.SelectServer()
 		
-			// TODO: Why no error message is being displayed on the terminal
-			// when no servers are avavilable
 			if server == nil {
 				http.Error(w, "No healthy server available", http.StatusServiceUnavailable)
 				return
