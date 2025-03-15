@@ -38,3 +38,31 @@ Commands
 1. Functional and load testing
 2. Nice and simple UI in React and TailwindCSS
 3. How should we demo this app? *(TODO)*
+4. I wanna load test this app.
+    -- First we need to think about what we need to test, when I say load testing.
+    -- Then we need to think about how to implement it in Artillery.
+    -- I think we also need to read a little bit about how artillery works and in what possible ways we can manipulate the artillery yaml file.
+
+
+
+We need to test the following - 
+
+1. Basic load testing
+    - max number of requests that the load balancer can handle without errors or significant performance degradation
+    - Monitor response times and latency and error rates as the load increases
+
+2. Burst traffic and sustained high load
+    - when we finally have max load we must sustain it for some time  and see how the system performs
+
+3. Failover and redundancy
+    - fail one or more servers and see how the system performs
+    - in particular how rerouting of the requests are done.
+    - in this case, do you see any difference in response times and latency.
+
+4. Compare various traffic distribution algorithms - 
+    - In our case, we have implement round robin, random and least connections strategy
+
+5. How are the resources being utilised?
+    - By resources, I mean CPU, Memory, Disk and Network usage.
+
+
