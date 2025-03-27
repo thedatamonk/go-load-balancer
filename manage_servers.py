@@ -1,6 +1,8 @@
 import json
 import subprocess
 import time
+import os
+
 
 def start_server(server):
     port = server.split(":")[-1]
@@ -9,6 +11,8 @@ def start_server(server):
     log_path = f"./logs/server_{port}.log"
 
     try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # check if the server is already running
         # start the server in a new subprocess
         with open(log_path, "w") as log:
             process = subprocess.Popen(command, shell=True, stdout=log, stderr=log)
