@@ -50,10 +50,21 @@ curl -s -i http://localhost:8080 | grep "X-Forwarded-Server"
 
 ```
 
-## How to perform load testing of this project?
+## How to Perform Load Testing
 
+You can use [Artillery](https://www.artillery.io/) to simulate high traffic and measure the performance of your load balancer.
+
+### Prerequisites  
+Ensure you have Artillery installed. If not, install it globally using:  
+```sh
+npm install -g artillery@latest
 ```
-artillery run artillery.yaml --record --key <ARTILLERY_API_KEY>
+
+### Running the Load Test
+Execute the following command to run a load test using `artillery.yaml`:
+
+```sh
+artillery run artillery.yaml --record --key ARTILLERY_API_KEY
 ```
 
 ## Why This Might Be Helpful for You
