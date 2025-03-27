@@ -11,6 +11,22 @@
 TODO
 ```
 
+## *[Optional]* Update config.json
+You can customize the load balancer's behavior by modifying config.json. The following options are available:
+
+`port`: Specifies the port on which the load balancer runs locally. You can change it as needed.
+
+`healthCheckInterval`: Defines the interval (in milliseconds) at which the load balancer continuously polls all registered servers to check their health.
+
+`lbAlgo`: Determines the load-balancing strategy. Available options:<br>
+-  `round-robin`
+- `random`
+- `least-connections`
+
+`servers`: Lists the backend servers that the load balancer can route traffic to.
+
+`maxRetries`: Specifies the number of retry attempts when a server fails to process a request. The request is forwarded to the next available server based on the selected load-balancing strategy.
+
 ## Run the load balancer
 
 ```sh
@@ -37,22 +53,31 @@ curl -s -i http://localhost:8080 | grep "X-Forwarded-Server"
 ## How to perform load testing of this project?
 
 ```
-artillery run artillery.yaml --record --key <API_KEY>
+artillery run artillery.yaml --record --key <ARTILLERY_API_KEY>
 ```
 
-## Why this might be helpful for you?
+## Why This Might Be Helpful for You
 
-- You can use this as a base project for your implementation of a load balancer.
-- By playing around with the load balancer tool, you can see what would happen by tweaking different settings of a load balancer.
-- By playing around with the load balancer tool, you would understand the load balancer working much better.
-
+- Use this as a base project to implement your own load balancer.
+- Experiment with different load balancer settings to observe their impact.
+- Gain a deeper understanding of how a load balancer works by interacting with its configurations and mechanisms.
 
 ## Features
-1. API endpoint to add more servers in case of increase in traffic.
-2. Remove unhealthy servers - unhealthy is defined by a `threshold`. If a server is not responding continously for `threshold` amount of time, then this server will automatically be removed.
-3. Retry mechanism - if a server fails to respond to a request sent by the load balancer, then the load balancer tries to send the same request to another server.
-4. Common load balancer strategies are implemented - 
-    - ***Round Robin***
-    - ***Random***
-    - ***Least connections***
+
+1. **Dynamic Server Scaling**  
+   - Add new servers dynamically via an API endpoint to handle increased traffic.
+
+2. **Automatic Removal of Unhealthy Servers**  
+   - Servers are monitored continuously.  
+   - If a server fails to respond for a specified `threshold` duration, it is automatically removed from the pool.
+
+3. **Intelligent Retry Mechanism**  
+   - If a server fails to process a request, the load balancer retries the request with another available server.
+
+4. **Multiple Load Balancing Strategies**  
+   - Supports the following strategies:  
+     - **Round Robin**  
+     - **Random**  
+     - **Least Connections**
+
 
